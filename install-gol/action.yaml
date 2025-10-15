@@ -1,0 +1,116 @@
+name: Install GeoDesk GOL
+description: Install GeoDesk GOL tool with specified version (1.x or 2.x)
+inputs:
+  version:
+    description: GOL version to install (e.g., "1", "2", "1.x", "2.x", or specific like "2.1.0")
+    required: true
+  github_token:
+    description: GitHub token to avoid API rate limits (defaults to github.token)
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Install dependencies (skip if already present)
+      shell: bash
+      run: |
+        need_install() { ! command -v "$1" >/dev/null 2>&1; }
+
+        pkgs=()
+        need_install unzip && pkgs+=(unzip)
+        need_install jq && pkgs+=(jq)
+
+        if ((${#pkgs[@]})); then
+          sudo dnf -y install "${pkgs[@]}"
+        else
+          echo "All required packages already present."
+        fi
+
+    - name: Install GOL
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        VERSION="${{ inputs.version }}"
+
+        # Determine major version (1 or 2)
+        if [[ "$VERSION" =~ ^1 ]]; then
+          MAJOR_VERSION="1"
+          REPO="clarisma/gol-tool"
+          ASSET_PATTERN='gol-tool-.*\\.zip$'
+        elif [[ "$VERSION" =~ ^2 ]]; then
+          MAJOR_VERSION="2"
+          REPO="clarisma/geodesk-gol"
+          ASSET_PATTERN='gol-.*-linux\\.zip$'
+        else
+          echo "Unsupported version format: $VERSION" >&2
+          echo "Expected: 1, 2, 1.x, 2.x, or specific version like 1.0.0 or 2.1.0" >&2
+          exit 1
+        fi
+
+        echo "Installing GOL ${MAJOR_VERSION}.x from ${REPO}..."
+
+        # Download release
+        tmp=$(mktemp -d)
+
+        # Use GitHub token if available to avoid rate limits
+        TOKEN="${{ inputs.github_token }}"
+        if [[ -n "$TOKEN" ]]; then
+          releases=$(curl -sSL -H "Authorization: Bearer $TOKEN" \
+            "https://api.github.com/repos/${REPO}/releases?per_page=100")
+        else
+          releases=$(curl -sSL "https://api.github.com/repos/${REPO}/releases?per_page=100")
+        fi
+
+        # Debug: Check if we got valid JSON
+        if ! echo "$releases" | jq -e '.' >/dev/null 2>&1; then
+          echo "Error: Failed to fetch releases from GitHub API" >&2
+          echo "Response: $releases" >&2
+          exit 1
+        fi
+
+        # Build version filter based on input
+        if [[ "$VERSION" == "$MAJOR_VERSION" || "$VERSION" == "${MAJOR_VERSION}.x" ]]; then
+          # Latest version in major series
+          VERSION_FILTER="startswith(\"${MAJOR_VERSION}.\")"
+        else
+          # Specific version
+          VERSION_FILTER="(. == \"${VERSION}\" or . == \"v${VERSION}\")"
+        fi
+
+        url=$(jq -r "[.[]
+            | select(.draft==false and .prerelease==false and (.tag_name|tostring|ltrimstr(\"v\")|${VERSION_FILTER}))
+          ][0]
+          .assets[]
+          | select(.name | test(\"${ASSET_PATTERN}\"))
+          | .browser_download_url" <<<"$releases" | head -n1)
+
+        if [[ -z "${url:-}" || "$url" == "null" ]]; then
+          echo "Failed to locate GOL ${VERSION} release asset URL" >&2
+          exit 1
+        fi
+
+        echo "Downloading from: $url"
+        curl -L "$url" -o "$tmp/gol.zip"
+
+        # Install to ~/.local/opt
+        prefix="$HOME/.local/opt"
+        mkdir -p "$prefix"
+        unzip -q -o "$tmp/gol.zip" -d "$prefix"
+
+        # Create symlink based on version
+        if [[ "$MAJOR_VERSION" == "1" ]]; then
+          latest=$(ls -d "$prefix"/gol-tool-* | sort -V | tail -n1)
+          ln -sfn "$latest" "$prefix/gol-tool"
+          GOL_BIN="$prefix/gol-tool/bin/gol"
+        else
+          GOL_BIN="$prefix/gol"
+        fi
+
+        # Add to PATH
+        mkdir -p "$HOME/.local/bin"
+        ln -sfn "$GOL_BIN" "$HOME/.local/bin/gol"
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+        # Verify installation
+        "$HOME/.local/bin/gol" --version

@@ -1,0 +1,16 @@
+name: Set Date Tag
+description: Generate a date-based tag (YYYYMMDD format)
+outputs:
+  tag:
+    description: The generated date tag
+    value: ${{ steps.generate.outputs.tag }}
+runs:
+  using: composite
+  steps:
+    - name: Generate date tag
+      id: generate
+      shell: bash
+      run: |
+        TAG=$(date -u +%Y%m%d)
+        echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+        echo "Generated tag: $TAG"

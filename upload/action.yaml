@@ -1,0 +1,99 @@
+name: Upload Artifact To R2
+description: Upload an artifact and its optional metadata/checksum companions to the configured R2 remote.
+inputs:
+  file:
+    description: Path to the file to publish
+    required: true
+  remote_bucket:
+    description: R2 bucket name
+    required: false
+    default: openplanetdata
+  remote_filename:
+    description: Override filename appended to remote_path/remote_version (defaults to basename of file)
+    required: false
+    default: ""
+  remote_name:
+    description: rclone remote name (e.g., openplanetdata-r2)
+    required: false
+    default: openplanetdata-r2
+  remote_path:
+    description: Destination prefix in remote; final object path is remote_path/remote_version/remote_filename
+    required: true
+  remote_version:
+    description: Version segment appended to remote_path (e.g., v1); leave empty if not versioned
+    required: false
+    default: ""
+  upload_checksum:
+    description: If true, also publish .sha256 when present
+    required: false
+    default: "true"
+  upload_metadata:
+    description: If true, also publish .metadata when present
+    required: false
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - name: Install Rclone
+      uses: openplanetdata/actions/install-rclone@main
+      env:
+        RCLONE_CONFIG_DATA: ${{ env.RCLONE_CONFIG_DATA }}
+
+    - name: Upload file to R2
+      shell: bash
+      env:
+        ARTIFACT_FILE: ${{ inputs.file }}
+        REMOTE_FILENAME: ${{ inputs.remote_filename }}
+        REMOTE_NAME: ${{ inputs.remote_name }}
+        REMOTE_BUCKET: ${{ inputs.remote_bucket }}
+        REMOTE_PATH: ${{ inputs.remote_path }}
+        REMOTE_VERSION: ${{ inputs.remote_version }}
+      run: |
+        set -euo pipefail
+        "${GITHUB_ACTION_PATH}/r2-upload.sh" --progress \
+          "$REMOTE_NAME" \
+          "$REMOTE_BUCKET" \
+          "$REMOTE_PATH" \
+          "$REMOTE_VERSION" \
+          "$REMOTE_FILENAME" \
+          "$ARTIFACT_FILE"
+
+    - name: Upload metadata file to R2
+      if: ${{ inputs.upload_metadata == 'true' }}
+      shell: bash
+      env:
+        ARTIFACT_FILE: ${{ inputs.file }}
+        REMOTE_FILENAME: ${{ inputs.remote_filename }}
+        REMOTE_NAME: ${{ inputs.remote_name }}
+        REMOTE_BUCKET: ${{ inputs.remote_bucket }}
+        REMOTE_PATH: ${{ inputs.remote_path }}
+        REMOTE_VERSION: ${{ inputs.remote_version }}
+      run: |
+        set -euo pipefail
+        "${GITHUB_ACTION_PATH}/r2-upload.sh" --allow-missing --label "metadata file" --suffix ".metadata" \
+          "$REMOTE_NAME" \
+          "$REMOTE_BUCKET" \
+          "$REMOTE_PATH" \
+          "$REMOTE_VERSION" \
+          "$REMOTE_FILENAME" \
+          "${ARTIFACT_FILE}.metadata"
+
+    - name: Upload sha256 file to R2
+      if: ${{ inputs.upload_checksum == 'true' }}
+      shell: bash
+      env:
+        ARTIFACT_FILE: ${{ inputs.file }}
+        REMOTE_FILENAME: ${{ inputs.remote_filename }}
+        REMOTE_NAME: ${{ inputs.remote_name }}
+        REMOTE_BUCKET: ${{ inputs.remote_bucket }}
+        REMOTE_PATH: ${{ inputs.remote_path }}
+        REMOTE_VERSION: ${{ inputs.remote_version }}
+      run: |
+        set -euo pipefail
+        "${GITHUB_ACTION_PATH}/r2-upload.sh" --allow-missing --label "sha256 file" --suffix ".sha256" \
+          "$REMOTE_NAME" \
+          "$REMOTE_BUCKET" \
+          "$REMOTE_PATH" \
+          "$REMOTE_VERSION" \
+          "$REMOTE_FILENAME" \
+          "${ARTIFACT_FILE}.sha256"

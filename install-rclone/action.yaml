@@ -1,0 +1,22 @@
+name: Install rclone
+description: Install rclone and configure it with RCLONE_CONFIG_DATA environment variable
+runs:
+  using: composite
+  steps:
+    - name: Install rclone (skip if already present)
+      shell: bash
+      run: |
+        set -euo pipefail
+        if ! command -v rclone >/dev/null 2>&1; then
+          curl https://rclone.org/install.sh | sudo bash
+        fi
+        rclone --version
+
+        config="${RCLONE_CONFIG_DATA:-}"
+        if [ -n "$config" ]; then
+          mkdir -p "${HOME}/.config/rclone"
+          printf '%s' "$config" >"${HOME}/.config/rclone/rclone.conf"
+          echo "rclone configuration written to ${HOME}/.config/rclone/rclone.conf"
+        else
+          echo "RCLONE_CONFIG_DATA not provided, skipping configuration"
+        fi

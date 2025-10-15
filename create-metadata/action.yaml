@@ -1,0 +1,173 @@
+name: Create Artifact Metadata
+description: Generate .metadata and .sha256 companions for an artifact and expose their contents.
+inputs:
+  file:
+    description: Path to file to consider (e.g., planet-20240101.osm.pbf)
+    required: true
+  deprecated:
+    description: Whether the artifact is deprecated
+    required: false
+    default: "false"
+  deprecation_reason:
+    description: Reason for deprecation (empty if not deprecated)
+    required: false
+    default: ""
+  remote_filename:
+    description: Destination filename (defaults to basename of file if omitted)
+    required: false
+    default: ""
+  remote_path:
+    description: Remote destination path without version or filename (e.g., openplanetdata/osm/planet/pbf)
+    required: true
+  remote_version:
+    description: Version label for the destination (e.g., v1, v2)
+    required: true
+  tags:
+    description: Tags applied to the artifact (newline or comma separated)
+    required: false
+    default: ""
+outputs:
+  metadata_content:
+    description: JSON metadata content
+    value: ${{ steps.capture.outputs.metadata_content }}
+  sha_content:
+    description: SHA256 checksum content
+    value: ${{ steps.capture.outputs.sha_content }}
+runs:
+  using: composite
+  steps:
+    - name: Ensure jq present
+      shell: bash
+      run: |
+        set -euo pipefail
+        
+        # Skip if jq is already installed
+        if command -v jq >/dev/null 2>&1; then
+          echo "jq is already installed"
+          jq --version
+          exit 0
+        fi
+        
+        # Detect OS and install jq
+        if [ -f /etc/os-release ]; then
+          . /etc/os-release
+          case "$ID" in
+            ubuntu|debian)
+              sudo apt-get update -qq
+              sudo apt-get install -y jq
+              ;;
+            fedora|rhel|centos)
+              sudo dnf install -y jq
+              ;;
+            *)
+              echo "Unsupported OS: $ID"
+              exit 1
+              ;;
+          esac
+        else
+          echo "Cannot detect OS"
+          exit 1
+        fi
+        
+        jq --version
+
+    - name: Create sha256 and metadata
+      shell: bash
+      env:
+        DEPRECATED: ${{ inputs.deprecated }}
+        DEPRECATION_REASON: ${{ inputs.deprecation_reason }}
+        FILE: ${{ inputs.file }}
+        REMOTE_FILENAME: ${{ inputs.remote_filename }}
+        REMOTE_PATH: ${{ inputs.remote_path }}
+        REMOTE_VERSION: ${{ inputs.remote_version }}
+        TAGS: ${{ inputs.tags }}
+      run: |
+        set -euo pipefail
+        
+        echo "=== Debug: Environment Variables ==="
+        echo "FILE: $FILE"
+        echo "REMOTE_FILENAME: $REMOTE_FILENAME"
+        echo "REMOTE_PATH: $REMOTE_PATH"
+        echo "REMOTE_VERSION: $REMOTE_VERSION"
+        echo "TAGS: $TAGS"
+        echo "GITHUB_ACTION_PATH: $GITHUB_ACTION_PATH"
+        echo ""
+        
+        echo "=== Step 1: Creating SHA256 checksum ==="
+        sha256sum "$FILE" >"$FILE.sha256"
+        echo "✓ SHA256 created"
+        
+        echo "=== Step 2: Reading file stats ==="
+        stat_output=$(stat -c '%s %W %Z' "$FILE")
+        read -r size w z <<< "$stat_output"
+        created=$(( w==0 ? z : w ))
+        echo "✓ File size: $size, created: $created"
+        
+        echo "=== Step 3: Processing filenames and paths ==="
+        name="$REMOTE_FILENAME"
+        if [ -z "$name" ]; then
+          name="$(basename "$FILE")"
+        fi
+        normalized_path="${REMOTE_PATH#/}"
+        normalized_path="${normalized_path%/}"
+        version="${REMOTE_VERSION#/}"
+        version="${version#/}"
+        version="${version%/}"
+        echo "✓ name=$name, path=$normalized_path, version=$version"
+        
+        echo "=== Step 4: Processing deprecated flag ==="
+        deprecated_str=$(printf '%s' "$DEPRECATED" | tr '[:upper:]' '[:lower:]')
+        if [ "$deprecated_str" = "true" ]; then
+          deprecated_bool=true
+        else
+          deprecated_bool=false
+        fi
+        echo "✓ deprecated=$deprecated_bool"
+        
+        echo "=== Step 5: Normalizing tags ==="
+        echo "normalize_tags.py location: $GITHUB_ACTION_PATH/normalize_tags.py"
+        ls -la "$GITHUB_ACTION_PATH/normalize_tags.py" || echo "ERROR: normalize_tags.py not found!"
+        
+        if [ ! -f "$GITHUB_ACTION_PATH/normalize_tags.py" ]; then
+          echo "ERROR: normalize_tags.py does not exist at expected location"
+          exit 1
+        fi
+        
+        tags_json=$(python3 "$GITHUB_ACTION_PATH/normalize_tags.py") || {
+          echo "ERROR: normalize_tags.py failed with exit code $?"
+          exit 1
+        }
+        echo "✓ tags_json=$tags_json"
+        
+        echo "=== Step 6: Creating metadata JSON ==="
+        jq -n \
+          --arg size "$size" \
+          --argjson created "$created" \
+          --arg reason "$DEPRECATION_REASON" \
+          --arg remote_filename "$name" \
+          --arg remote_path "$normalized_path" \
+          --arg remote_version "$version" \
+          --argjson deprecated "$deprecated_bool" \
+          --argjson tags "$tags_json" \
+          '{created: $created, size: $size, deprecated: $deprecated, deprecation_reason: $reason, remote_filename: $remote_filename, remote_path: $remote_path, remote_version: $remote_version, tags: $tags}' \
+          >"$FILE.metadata"
+        
+        echo "✓ Metadata file created"
+        echo "=== Metadata content ==="
+        cat "$FILE.metadata"
+
+    - name: Capture contents
+      id: capture
+      shell: bash
+      env:
+        FILE: ${{ inputs.file }}
+        REMOTE_FILENAME: ${{ inputs.remote_filename }}
+        REMOTE_PATH: ${{ inputs.remote_path }}
+        REMOTE_VERSION: ${{ inputs.remote_version }}
+      run: |
+        set -euo pipefail
+        echo "metadata_content=$(jq -c . "${FILE}.metadata")" >>"$GITHUB_OUTPUT"
+        echo "remote_filename=$REMOTE_FILENAME" >>"$GITHUB_OUTPUT"
+        echo "remote_path=$REMOTE_PATH" >>"$GITHUB_OUTPUT"
+        echo "remote_version=$REMOTE_VERSION" >>"$GITHUB_OUTPUT"
+        echo "sha_content=$(cat "${FILE}.sha256")" >>"$GITHUB_OUTPUT"

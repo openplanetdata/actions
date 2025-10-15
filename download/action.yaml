@@ -1,0 +1,57 @@
+name: Download from R2
+description: Download files from R2 with optimized bandwidth settings
+inputs:
+  base_url:
+    description: Base URL for HTTP downloads
+    required: false
+    default: "https://download.openplanetdata.com"
+  buffer_size:
+    description: Buffer size for I/O operations
+    required: false
+    default: "2G"
+  destination:
+    description: Local destination path (default is current directory)
+    required: false
+    default: "."
+  multi_thread_streams:
+    description: Number of parallel download streams
+    required: false
+    default: "768"
+  multi_thread_chunk_size:
+    description: Chunk size per stream
+    required: false
+    default: "120M"
+  remote_path:
+    description: Remote path relative to base URL (e.g., osm/planet/pbf/planet-latest.osm.pbf)
+    required: true
+  show_progress:
+    description: Show download progress
+    required: false
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - name: Install Rclone
+      uses: openplanetdata/actions/install-rclone@main
+      env:
+        RCLONE_CONFIG_DATA: ${{ env.RCLONE_CONFIG_DATA }}
+
+    - name: Download file from R2
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        STATS_FLAGS=""
+        if [ "${{ inputs.show_progress }}" = "true" ]; then
+          STATS_FLAGS="--log-level INFO --stats-log-level INFO --stats=10s --stats-one-line-date"
+        fi
+
+        time rclone copy \
+          --http-url ${{ inputs.base_url }} :http:${{ inputs.remote_path }} ${{ inputs.destination }} \
+          --multi-thread-cutoff 0 \
+          --multi-thread-streams ${{ inputs.multi_thread_streams }} \
+          --multi-thread-chunk-size ${{ inputs.multi_thread_chunk_size }} \
+          --buffer-size ${{ inputs.buffer_size }} \
+          --transfers 1 \
+          --use-mmap \
+          $STATS_FLAGS
