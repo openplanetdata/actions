@@ -1,0 +1,42 @@
+name: Cleanup Downloads
+description: Cleanup downloaded files that were not cached
+inputs:
+  path:
+    description: Directory to search for downloaded files (default is current directory)
+    required: false
+    default: "."
+runs:
+  using: composite
+  steps:
+    - name: Cleanup downloaded files
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        SEARCH_PATH="${{ inputs.path }}"
+        echo "Cleaning up downloaded files in: $SEARCH_PATH"
+
+        # Find all .download-info files
+        find "$SEARCH_PATH" -maxdepth 1 -name "*.download-info" -type f | while read -r INFO_FILE; do
+          # Get the actual file path (remove .download-info extension)
+          DATA_FILE="${INFO_FILE%.download-info}"
+          FILENAME=$(basename "$DATA_FILE")
+
+          if [ ! -f "$DATA_FILE" ]; then
+            echo "→ Skipping $FILENAME (data file not found)"
+            rm -f "$INFO_FILE"
+            continue
+          fi
+
+          # Check if file was cached
+          CACHED=$(grep '"cached"' "$INFO_FILE" | sed 's/.*"cached": *\([^,}]*\).*/\1/' || echo "false")
+
+          if [ "$CACHED" = "true" ]; then
+            echo "✓ Preserving cached file: $FILENAME"
+          else
+            echo "→ Removing non-cached file: $FILENAME"
+            rm -f "$DATA_FILE" "$INFO_FILE"
+          fi
+        done
+
+        echo "✓ Cleanup complete"
