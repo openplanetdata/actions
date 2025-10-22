@@ -28,6 +28,10 @@ inputs:
     description: Show download progress
     required: false
     default: "true"
+  cache:
+    description: Enable caching to skip re-downloading files on the same day
+    required: false
+    default: "true"
 runs:
   using: composite
   steps:
@@ -41,17 +45,57 @@ runs:
       run: |
         set -euo pipefail
 
-        STATS_FLAGS=""
-        if [ "${{ inputs.show_progress }}" = "true" ]; then
-          STATS_FLAGS="--log-level INFO --stats-log-level INFO --stats=10s --stats-one-line-date"
+        # Extract filename from remote path
+        REMOTE_PATH="${{ inputs.remote_path }}"
+        FILENAME=$(basename "$REMOTE_PATH")
+        DEST="${{ inputs.destination }}"
+        FILE_PATH="$DEST/$FILENAME"
+        CACHE_FILE="$FILE_PATH.cache"
+        TODAY=$(date -u +%Y%m%d)
+
+        # Check cache if enabled
+        SHOULD_DOWNLOAD=true
+        if [ "${{ inputs.cache }}" = "true" ]; then
+          if [ -f "$FILE_PATH" ]; then
+            echo "→ Found existing file: $FILENAME"
+
+            if [ -f "$CACHE_FILE" ]; then
+              CACHED_DATE=$(cat "$CACHE_FILE" 2>/dev/null || echo "")
+
+              if [ "$CACHED_DATE" = "$TODAY" ]; then
+                echo "✓ Cache valid for today ($TODAY), skipping download"
+                SHOULD_DOWNLOAD=false
+              else
+                echo "→ Cache outdated (cached: $CACHED_DATE, today: $TODAY), will re-download"
+              fi
+            else
+              echo "→ No cache file found, will download to validate"
+            fi
+          else
+            echo "→ File does not exist, will download"
+          fi
         fi
 
-        time rclone copy \
-          --http-url ${{ inputs.base_url }} :http:${{ inputs.remote_path }} ${{ inputs.destination }} \
-          --multi-thread-cutoff 0 \
-          --multi-thread-streams ${{ inputs.multi_thread_streams }} \
-          --multi-thread-chunk-size ${{ inputs.multi_thread_chunk_size }} \
-          --buffer-size ${{ inputs.buffer_size }} \
-          --transfers 1 \
-          --use-mmap \
-          $STATS_FLAGS
+        # Download if needed
+        if [ "$SHOULD_DOWNLOAD" = "true" ]; then
+          STATS_FLAGS=""
+          if [ "${{ inputs.show_progress }}" = "true" ]; then
+            STATS_FLAGS="--log-level INFO --stats-log-level INFO --stats=10s --stats-one-line-date"
+          fi
+
+          time rclone copy \
+            --http-url ${{ inputs.base_url }} :http:${{ inputs.remote_path }} ${{ inputs.destination }} \
+            --multi-thread-cutoff 0 \
+            --multi-thread-streams ${{ inputs.multi_thread_streams }} \
+            --multi-thread-chunk-size ${{ inputs.multi_thread_chunk_size }} \
+            --buffer-size ${{ inputs.buffer_size }} \
+            --transfers 1 \
+            --use-mmap \
+            $STATS_FLAGS
+
+          # Create cache file if caching is enabled
+          if [ "${{ inputs.cache }}" = "true" ]; then
+            echo "$TODAY" > "$CACHE_FILE"
+            echo "✓ Created cache file for $TODAY"
+          fi
+        fi
