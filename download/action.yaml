@@ -66,7 +66,9 @@ runs:
                 echo "✓ Cache valid for today ($TODAY), skipping download"
                 SHOULD_DOWNLOAD=false
               else
-                echo "→ Cache outdated (cached: $CACHED_DATE, today: $TODAY), will re-download"
+                echo "→ Cache outdated (cached: $CACHED_DATE, today: $TODAY), removing old files"
+                rm -f "$FILE_PATH" "$CACHE_FILE"
+                echo "✓ Removed outdated file and cache"
               fi
             else
               echo "→ No cache file found, will download to validate"
