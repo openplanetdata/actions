@@ -99,10 +99,9 @@ runs:
 
         # Create download metadata file (fields sorted alphabetically)
         CACHED_VALUE=${{ inputs.cache }}
-        DOWNLOADED_VALUE=$([ "$SHOULD_DOWNLOAD" = "true" ] && echo "true" || echo "false")
         TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-        printf '{\n  "cached": %s,\n  "date": "%s",\n  "downloaded": %s,\n  "filename": "%s",\n  "remote_path": "%s",\n  "timestamp": "%s"\n}\n' \
-          "$CACHED_VALUE" "$TODAY" "$DOWNLOADED_VALUE" "$FILENAME" "$REMOTE_PATH" "$TIMESTAMP" > "$INFO_FILE"
+        printf '{\n  "cached": %s,\n  "date": "%s",\n  "filename": "%s",\n  "remote_path": "%s",\n  "timestamp": "%s"\n}\n' \
+          "$CACHED_VALUE" "$TODAY" "$FILENAME" "$REMOTE_PATH" "$TIMESTAMP" > "$INFO_FILE"
 
         echo "✓ Created download metadata"
