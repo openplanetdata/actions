@@ -23,6 +23,10 @@ inputs:
     description: Version segment appended to remote_path (e.g., v1); leave empty if not versioned
     required: false
     default: ""
+  remote_version_prefix:
+    description: "Prefix applied to remote_version when building the folder (default: v); set empty to disable prefix"
+    required: false
+    default: v
   upload_checksum:
     description: If true, also publish .sha256 when present
     required: false
@@ -48,13 +52,18 @@ runs:
         REMOTE_BUCKET: ${{ inputs.remote_bucket }}
         REMOTE_PATH: ${{ inputs.remote_path }}
         REMOTE_VERSION: ${{ inputs.remote_version }}
+        REMOTE_VERSION_PREFIX: ${{ inputs.remote_version_prefix }}
       run: |
         set -euo pipefail
+        REMOTE_VERSION_SEGMENT="${REMOTE_VERSION}"
+        if [[ -n "${REMOTE_VERSION}" ]]; then
+          REMOTE_VERSION_SEGMENT="${REMOTE_VERSION_PREFIX}${REMOTE_VERSION}"
+        fi
         "${GITHUB_ACTION_PATH}/r2-upload.sh" --progress \
           "$REMOTE_NAME" \
           "$REMOTE_BUCKET" \
           "$REMOTE_PATH" \
-          "$REMOTE_VERSION" \
+          "$REMOTE_VERSION_SEGMENT" \
           "$REMOTE_FILENAME" \
           "$ARTIFACT_FILE"
 
@@ -68,13 +77,18 @@ runs:
         REMOTE_BUCKET: ${{ inputs.remote_bucket }}
         REMOTE_PATH: ${{ inputs.remote_path }}
         REMOTE_VERSION: ${{ inputs.remote_version }}
+        REMOTE_VERSION_PREFIX: ${{ inputs.remote_version_prefix }}
       run: |
         set -euo pipefail
+        REMOTE_VERSION_SEGMENT="${REMOTE_VERSION}"
+        if [[ -n "${REMOTE_VERSION}" ]]; then
+          REMOTE_VERSION_SEGMENT="${REMOTE_VERSION_PREFIX}${REMOTE_VERSION}"
+        fi
         "${GITHUB_ACTION_PATH}/r2-upload.sh" --allow-missing --label "metadata file" --suffix ".metadata" \
           "$REMOTE_NAME" \
           "$REMOTE_BUCKET" \
           "$REMOTE_PATH" \
-          "$REMOTE_VERSION" \
+          "$REMOTE_VERSION_SEGMENT" \
           "$REMOTE_FILENAME" \
           "${ARTIFACT_FILE}.metadata"
 
@@ -88,12 +102,17 @@ runs:
         REMOTE_BUCKET: ${{ inputs.remote_bucket }}
         REMOTE_PATH: ${{ inputs.remote_path }}
         REMOTE_VERSION: ${{ inputs.remote_version }}
+        REMOTE_VERSION_PREFIX: ${{ inputs.remote_version_prefix }}
       run: |
         set -euo pipefail
+        REMOTE_VERSION_SEGMENT="${REMOTE_VERSION}"
+        if [[ -n "${REMOTE_VERSION}" ]]; then
+          REMOTE_VERSION_SEGMENT="${REMOTE_VERSION_PREFIX}${REMOTE_VERSION}"
+        fi
         "${GITHUB_ACTION_PATH}/r2-upload.sh" --allow-missing --label "sha256 file" --suffix ".sha256" \
           "$REMOTE_NAME" \
           "$REMOTE_BUCKET" \
           "$REMOTE_PATH" \
-          "$REMOTE_VERSION" \
+          "$REMOTE_VERSION_SEGMENT" \
           "$REMOTE_FILENAME" \
           "${ARTIFACT_FILE}.sha256"

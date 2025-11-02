@@ -70,7 +70,7 @@ fi
 remote_name="$1"
 remote_bucket="$2"
 remote_path="$3"
-remote_version="v$4"
+remote_version="$4"
 remote_filename="$5"
 source_path="$6"
 
