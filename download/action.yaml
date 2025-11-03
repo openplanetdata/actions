@@ -16,11 +16,11 @@ inputs:
   multi_thread_streams:
     description: Number of parallel download streams
     required: false
-    default: "768"
+    default: "32"
   multi_thread_chunk_size:
     description: Chunk size per stream
     required: false
-    default: "120M"
+    default: "64M"
   remote_path:
     description: Remote path relative to base URL (e.g., osm/planet/pbf/planet-latest.osm.pbf)
     required: true
@@ -83,6 +83,8 @@ runs:
           fi
 
           time rclone copy \
+            --buffer-size 0 \
+            --disable-http2 \
             --http-url ${{ inputs.base_url }} :http:${{ inputs.remote_path }} ${{ inputs.destination }} \
             --multi-thread-cutoff 0 \
             --multi-thread-streams ${{ inputs.multi_thread_streams }} \
