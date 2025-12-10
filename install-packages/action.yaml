@@ -1,8 +1,16 @@
 name: Install Packages
-description: Install system packages using the appropriate package manager (dnf or apt-get)
+description: |
+  Install system packages using the appropriate package manager (dnf or apt-get).
+  Supports package name mapping when names differ between distros.
+
+  Syntax:
+    - Simple: "package-name" (same name on both dnf and apt)
+    - Mapped: "dnf:dnf-name|apt:apt-name" (different names per package manager)
+
+  Example: "aria2 dnf:python3-devel|apt:python3-dev jq"
 inputs:
   packages:
-    description: Space-separated list of packages to install
+    description: Space-separated list of packages to install (supports dnf:name|apt:name syntax for different package names)
     required: true
 runs:
   using: composite
@@ -12,20 +20,53 @@ runs:
       run: |
         set -euo pipefail
 
-        IFS=' ' read -ra pkgs <<< "${{ inputs.packages }}"
+        # Detect package manager
+        if command -v dnf &>/dev/null; then
+          PM="dnf"
+        elif command -v apt-get &>/dev/null; then
+          PM="apt"
+        else
+          echo "::error::No supported package manager found (dnf or apt-get)"
+          exit 1
+        fi
 
-        if [ ${#pkgs[@]} -eq 0 ]; then
+        echo "Detected package manager: $PM"
+
+        # Parse packages and resolve names for current package manager
+        resolved_pkgs=()
+        IFS=' ' read -ra input_pkgs <<< "${{ inputs.packages }}"
+
+        for pkg in "${input_pkgs[@]}"; do
+          if [[ "$pkg" == *"|"* ]]; then
+            # Package has mapping syntax: dnf:name|apt:name
+            resolved=""
+            IFS='|' read -ra parts <<< "$pkg"
+            for part in "${parts[@]}"; do
+              if [[ "$part" == "$PM:"* ]]; then
+                resolved="${part#*:}"
+                break
+              fi
+            done
+            if [ -z "$resolved" ]; then
+              echo "::warning::No mapping found for package '$pkg' on $PM, skipping"
+            else
+              resolved_pkgs+=("$resolved")
+            fi
+          else
+            # Simple package name, use as-is
+            resolved_pkgs+=("$pkg")
+          fi
+        done
+
+        if [ ${#resolved_pkgs[@]} -eq 0 ]; then
           echo "No packages to install"
           exit 0
         fi
 
-        echo "Installing packages: ${pkgs[*]}"
+        echo "Installing packages: ${resolved_pkgs[*]}"
 
-        if command -v dnf &>/dev/null; then
-          sudo dnf -y install "${pkgs[@]}"
-        elif command -v apt-get &>/dev/null; then
-          sudo apt-get update && sudo apt-get install -y "${pkgs[@]}"
+        if [ "$PM" = "dnf" ]; then
+          sudo dnf -y install "${resolved_pkgs[@]}"
         else
-          echo "::error::No supported package manager found (dnf or apt-get)"
-          exit 1
+          sudo apt-get update && sudo apt-get install -y "${resolved_pkgs[@]}"
         fi
