@@ -1,0 +1,31 @@
+name: Install Packages
+description: Install system packages using the appropriate package manager (dnf or apt-get)
+inputs:
+  packages:
+    description: Space-separated list of packages to install
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Install packages
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        IFS=' ' read -ra pkgs <<< "${{ inputs.packages }}"
+
+        if [ ${#pkgs[@]} -eq 0 ]; then
+          echo "No packages to install"
+          exit 0
+        fi
+
+        echo "Installing packages: ${pkgs[*]}"
+
+        if command -v dnf &>/dev/null; then
+          sudo dnf -y install "${pkgs[@]}"
+        elif command -v apt-get &>/dev/null; then
+          sudo apt-get update && sudo apt-get install -y "${pkgs[@]}"
+        else
+          echo "::error::No supported package manager found (dnf or apt-get)"
+          exit 1
+        fi
